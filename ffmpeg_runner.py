@@ -129,7 +129,6 @@ def run_ffmpeg(
     audio_args = ["-c:a", "aac", "-b:a", f"{audio_bitrate_kb}k"]
     suffixes = [f"a{audio_bitrate_kb}"]
 
-    print('asfdf')
     if height or width:
         suf = ""
         if height:
