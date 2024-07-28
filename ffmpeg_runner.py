@@ -1,3 +1,4 @@
+from enum import Enum
 import glob
 import json
 import os.path
@@ -114,10 +115,16 @@ def get_audio_sampling_rate(input_path: str) -> int:
     return found_sampling_rates.pop()
 
 
+class VCodec(Enum):
+    h264 = "h264"
+    h265 = "h265"
+
+
 def run_ffmpeg(
     input_path: str,
     height: Optional[int],
     width: Optional[int],
+    vcodec: VCodec,
     crf: int,
     audio_bitrate_kb: int,
     audio_norm_db: int,
@@ -125,7 +132,14 @@ def run_ffmpeg(
     target_size_mb: Optional[int],
 ) -> None:
     conforming_args = ["-pix_fmt", "yuv420p"]
-    x264_args = ["-c:v", "libx264"]
+    if vcodec == VCodec.h264:
+        vcodec_args = ["-c:v", "libx264"]
+    elif vcodec == VCodec.h265:
+        vcodec_args = ["-c:v", "libx265"]
+        # Apparently this makes the file compatible with Apple devices
+        vcodec_args.extend(["-tag:v", "hvc1"])
+    else:
+        raise RuntimeError("unreachable")
     audio_args = ["-c:a", "aac", "-b:a", f"{audio_bitrate_kb}k"]
     suffixes = [f"a{audio_bitrate_kb}"]
 
@@ -136,7 +150,7 @@ def run_ffmpeg(
         if width:
             suf += f"w{width}"
 
-        x264_args.extend(["-filter:v", f"scale={width or -2}:{height or -2}"])
+        vcodec_args.extend(["-filter:v", f"scale={width or -2}:{height or -2}"])
         suffixes.append(suf)
 
     if target_size_mb:
@@ -149,21 +163,31 @@ def run_ffmpeg(
         target_bitrate_kbits = int(
             target_size_kbits / duration_secs - audio_bitrate_kb - 32
         )
-        x264_args.extend([f"-b:v", f"{target_bitrate_kbits}k"])
+        vcodec_args.extend([f"-b:v", f"{target_bitrate_kbits}k"])
 
-        first_pass_args = conforming_args + x264_args
-        first_pass_args.extend(["-pass", "1"])
+        first_pass_args = conforming_args + vcodec_args
+        if vcodec == VCodec.h264:
+            first_pass_args.extend(["-pass", "1"])
+        elif vcodec == VCodec.h265:
+            first_pass_args.extend(["-x265-params", "pass=1"])
+        else:
+            raise RuntimeError("unreachable")
         first_pass_args.extend(["-f", "null", "-y", "/dev/null"])
 
         cmd = ["ffmpeg", "-i", input_path] + first_pass_args
         print(f'Running {" ".join(cmd)}')
         subprocess.run(cmd, check=True)
 
-        x264_args.extend(["-pass", "2"])
+        if vcodec == VCodec.h264:
+            vcodec_args.extend(["-pass", "2"])
+        elif vcodec == VCodec.h265:
+            vcodec_args.extend(["-x265-params", "pass=2"])
+        else:
+            raise RuntimeError("unreachable")
 
     else:
         suffixes.append(f"crf{crf}")
-        x264_args.extend(["-crf", str(crf)])
+        vcodec_args.extend(["-crf", str(crf)])
 
     if audio_norm_db:
         if audio_norm_db > 0:
@@ -208,7 +232,7 @@ def run_ffmpeg(
         "-i",
         input_path,
         *conforming_args,
-        *x264_args,
+        *vcodec_args,
         *audio_args,
         output_path,
     ]
@@ -218,7 +242,13 @@ def run_ffmpeg(
 
 def main():
     parser = ArgumentParser(description="Runs ffmpeg for me.")
-    parser.add_argument("--crf", type=int, default=17, help="CRF value for video")
+    parser.add_argument(
+        "--vcodec", choices=[x.value for x in VCodec], default="h264",
+        help="Video codec (" + ", ".join([x.value for x in VCodec]) + ") h265 hasnt been tested")
+    parser.add_argument(
+        "--crf", type=int, default=17,
+        help=("CRF value for video (17 default visually lossless for x264; 19"
+              " visually lossless for x265; 23 x264 is 27 x265)"))
     parser.add_argument(
         "--audio-bitrate-kb", type=int, default=160, help="Audio bitrate in kbps"
     )
@@ -233,6 +263,8 @@ def main():
     parser.add_argument("--target-size-mb", type=int, help="Target size in MB")
     parser.add_argument("input", nargs="+", help="Input file(s)")
     args = parser.parse_args()
+
+    vcodec = VCodec(args.vcodec)
 
     raw_input_paths: List[str] = args.input
     input_paths: List[str] = []
@@ -252,6 +284,7 @@ def main():
             input_path,
             args.height,
             args.width,
+            vcodec,
             args.crf,
             args.audio_bitrate_kb,
             args.audio_norm_db,
