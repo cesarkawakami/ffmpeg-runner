@@ -21,7 +21,7 @@ def get_input_duration_secs(input_path: str) -> float:
         "-i",
         input_path,
     ]
-    print(f'Running {" ".join(cmd)}')
+    print(f"Running {' '.join(cmd)}")
     p = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -98,7 +98,7 @@ def get_audio_sampling_rate(input_path: str) -> int:
         "json",
         input_path,
     ]
-    print(f'Running {" ".join(cmd)}')
+    print(f"Running {' '.join(cmd)}")
     p = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -175,7 +175,7 @@ def run_ffmpeg(
         first_pass_args.extend(["-f", "null", "-y", "/dev/null"])
 
         cmd = ["ffmpeg", "-i", input_path] + first_pass_args
-        print(f'Running {" ".join(cmd)}')
+        print(f"Running {' '.join(cmd)}")
         subprocess.run(cmd, check=True)
 
         if vcodec == VCodec.h264:
@@ -203,7 +203,9 @@ def run_ffmpeg(
             )
             volume_delta = headroom
         new_lufs = loudness_info.integrated_lufs + volume_delta
-        print(f"Will shift volume from {loudness_info.integrated_lufs} LUFS to {new_lufs} LUFS")
+        print(
+            f"Will shift volume from {loudness_info.integrated_lufs} LUFS to {new_lufs} LUFS"
+        )
 
         if not audio_limiter:
             audio_args.extend(["-filter:a", f"volume={volume_delta}dB"])
@@ -236,24 +238,40 @@ def run_ffmpeg(
         *audio_args,
         output_path,
     ]
-    print(f'Running {" ".join(cmd)}')
+    print(f"Running {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
 
 
 def main():
     parser = ArgumentParser(description="Runs ffmpeg for me.")
     parser.add_argument(
-        "--vcodec", choices=[x.value for x in VCodec], default="h264",
-        help="Video codec (" + ", ".join([x.value for x in VCodec]) + ") h265 hasnt been tested")
-    parser.add_argument(
-        "--crf", type=int, default=17,
-        help=("CRF value for video (17 default visually lossless for x264; 19"
-              " visually lossless for x265; 23 x264 is 27 x265)"))
-    parser.add_argument(
-        "--audio-bitrate-kb", type=int, default=160, help="Audio bitrate in kbps"
+        "--vcodec",
+        choices=[x.value for x in VCodec],
+        default="h264",
+        help="Video codec ("
+        + ", ".join([x.value for x in VCodec])
+        + ") h265 hasnt been tested",
     )
     parser.add_argument(
-        "--audio-norm-db", type=int, default=16, help="Audio normalization in dB"
+        "--crf",
+        type=int,
+        default=17,
+        help=(
+            "CRF value for video (17 default visually lossless for x264; 19"
+            " visually lossless for x265; 23 x264 is 27 x265)"
+        ),
+    )
+    parser.add_argument(
+        "--audio-bitrate-kb",
+        type=int,
+        default=160,
+        help="Audio bitrate in kbps, default 160, use 320 for uploads",
+    )
+    parser.add_argument(
+        "--audio-norm-db",
+        type=int,
+        default=0,
+        help="Audio normalization in dB (0 to disable)",
     )
     parser.add_argument(
         "--audio-limiter", action="store_true", help="Enable audio limiter"
